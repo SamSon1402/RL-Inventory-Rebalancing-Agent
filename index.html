@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RL Inventory Rebalancing Agent | Blue Yonder AI Studio</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --blue: #0ea5e9;
+            --blue-glow: rgba(14, 165, 233, 0.35);
+            --teal: #14b8a6;
+            --amber: #f59e0b;
+            --red: #ef4444;
+            --green: #22c55e;
+            --purple: #a78bfa;
+            --bg: #030712;
+            --bg-card: #0a1628;
+            --bg-elevated: #111d33;
+            --text: #f1f5f9;
+            --text-dim: #94a3b8;
+            --text-muted: #475569;
+            --border: #1e3a5f;
+            --gradient: linear-gradient(135deg, #0ea5e9, #14b8a6, #22c55e);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+            background-image:
+                radial-gradient(ellipse at 20% 80%, rgba(14, 165, 233, 0.07) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(20, 184, 166, 0.05) 0%, transparent 50%);
+        }
+        .header {
+            background: rgba(10, 22, 40, 0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            padding: 0.6rem 1.5rem;
+            position: sticky; top: 0; z-index: 100;
+        }
+        .header-inner { max-width: 1800px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; }
+        .logo { display: flex; align-items: center; gap: 0.75rem; }
+        .logo-mark {
+            width: 42px; height: 42px; background: var(--gradient); border-radius: 10px;
+            display: grid; grid-template-columns: repeat(3,1fr); gap: 2px; padding: 6px;
+            position: relative;
+        }
+        .logo-mark::after { content:''; position:absolute; inset:-3px; background:var(--gradient); border-radius:13px; z-index:-1; opacity:0.4; filter:blur(10px); }
+        .logo-cell { background: rgba(255,255,255,0.9); border-radius: 2px; }
+        .logo-cell:nth-child(even) { background: rgba(255,255,255,0.4); }
+        .logo-title { font-size: 1.35rem; font-weight: 700; background: var(--gradient); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+        .logo-sub { font-size: 0.55rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 3px; font-weight: 500; }
+        .badges { display: flex; gap: 0.4rem; }
+        .badge { background: var(--bg-card); border: 1px solid var(--border); padding: 0.3rem 0.65rem; border-radius: 6px; font-size: 0.62rem; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; }
+        .badge.live { background: rgba(14,165,233,0.15); border-color: var(--blue); color: var(--blue); }
+        .badge.live::before { content:''; display:inline-block; width:6px; height:6px; background:var(--blue); border-radius:50%; margin-right:5px; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+        .main { max-width: 1800px; margin: 0 auto; padding: 1.25rem 1.5rem; }
+        .hero { text-align: center; margin-bottom: 1.25rem; }
+        .hero h1 { font-size: 2rem; font-weight: 700; background: var(--gradient); -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom: 0.3rem; }
+        .hero p { color: var(--text-dim); font-size: 0.9rem; }
+
+        .grid-main { display: grid; grid-template-columns: 1fr 380px; gap: 1.25rem; }
+        @media(max-width:1200px){ .grid-main{grid-template-columns:1fr;} }
+
+        .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+        .card-head { padding: 0.85rem 1.15rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: linear-gradient(180deg, rgba(17,29,51,0.6), transparent); }
+        .card-head h3 { font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
+        .card-body { padding: 1.15rem; }
+
+        /* Map / Warehouse Network */
+        .network-map {
+            position: relative; background: var(--bg); border-radius: 12px; height: 420px; overflow: hidden;
+            border: 1px solid rgba(14,165,233,0.15);
+        }
+        .map-grid {
+            position: absolute; inset: 0;
+            background-image:
+                linear-gradient(rgba(14,165,233,0.04) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(14,165,233,0.04) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+        .warehouse {
+            position: absolute; width: 110px; text-align: center; cursor: pointer;
+            transition: transform 0.3s;
+        }
+        .warehouse:hover { transform: scale(1.08); }
+        .wh-node {
+            width: 64px; height: 64px; margin: 0 auto 0.4rem; border-radius: 14px;
+            display: flex; align-items: center; justify-content: center; font-size: 1.5rem;
+            position: relative; transition: all 0.4s;
+        }
+        .wh-node::after { content:''; position:absolute; inset:-4px; border-radius:18px; z-index:-1; opacity:0; transition: opacity 0.4s; }
+        .warehouse.critical .wh-node { background: rgba(239,68,68,0.2); border: 2px solid var(--red); }
+        .warehouse.critical .wh-node::after { background: var(--red); opacity: 0.25; filter: blur(12px); }
+        .warehouse.warning .wh-node { background: rgba(245,158,11,0.2); border: 2px solid var(--amber); }
+        .warehouse.warning .wh-node::after { background: var(--amber); opacity: 0.2; filter: blur(10px); }
+        .warehouse.optimal .wh-node { background: rgba(34,197,94,0.15); border: 2px solid var(--green); }
+        .warehouse.optimal .wh-node::after { background: var(--green); opacity: 0.15; filter: blur(10px); }
+        .warehouse.surplus .wh-node { background: rgba(14,165,233,0.15); border: 2px solid var(--blue); }
+        .warehouse.surplus .wh-node::after { background: var(--blue); opacity: 0.2; filter: blur(10px); }
+        .wh-name { font-size: 0.72rem; font-weight: 600; margin-bottom: 0.15rem; }
+        .wh-stock { font-size: 0.6rem; font-family: 'JetBrains Mono', monospace; color: var(--text-dim); }
+
+        /* Transfer Arrows - SVG */
+        .transfer-svg { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+        .transfer-line { stroke-width: 2.5; fill: none; opacity: 0; }
+        .transfer-line.active { opacity: 1; animation: flowDash 1s linear infinite; }
+        @keyframes flowDash { to { stroke-dashoffset: -20; } }
+
+        /* Inventory Bars */
+        .inv-bars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; margin-top: 1rem; }
+        .inv-bar-item { background: var(--bg-elevated); border-radius: 10px; padding: 0.75rem; }
+        .inv-bar-head { display: flex; justify-content: space-between; margin-bottom: 0.4rem; }
+        .inv-bar-name { font-size: 0.72rem; font-weight: 600; }
+        .inv-bar-val { font-size: 0.72rem; font-family: 'JetBrains Mono', monospace; }
+        .inv-track { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+        .inv-fill { height: 100%; border-radius: 4px; transition: width 0.6s, background 0.6s; }
+
+        /* Controls */
+        .controls { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+        .ctrl-btn {
+            flex: 1; padding: 0.7rem; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px;
+            color: var(--text); font-family: 'Space Grotesk', sans-serif; font-size: 0.78rem; font-weight: 600;
+            cursor: pointer; transition: all 0.3s; display: flex; align-items: center; justify-content: center; gap: 0.4rem;
+        }
+        .ctrl-btn:hover { border-color: var(--blue); background: rgba(14,165,233,0.1); }
+        .ctrl-btn.active { border-color: var(--blue); background: rgba(14,165,233,0.2); color: var(--blue); }
+
+        /* Sidebar */
+        .sidebar { display: flex; flex-direction: column; gap: 1rem; }
+
+        /* RL Agent Panel */
+        .agent-status { background: var(--bg-elevated); border-radius: 12px; padding: 1rem; }
+        .agent-header { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.85rem; }
+        .agent-icon {
+            width: 46px; height: 46px; background: var(--gradient); border-radius: 10px;
+            display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+        }
+        .agent-name { font-size: 0.95rem; font-weight: 700; }
+        .agent-ver { font-size: 0.65rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+        .agent-metrics { display: grid; grid-template-columns: repeat(2,1fr); gap: 0.5rem; }
+        .a-metric { background: var(--bg); border-radius: 8px; padding: 0.65rem; text-align: center; }
+        .a-metric-val { font-size: 1.15rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--blue); }
+        .a-metric-label { font-size: 0.58rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* Reward Chart */
+        .reward-chart { background: var(--bg); border-radius: 10px; padding: 0.75rem; height: 140px; position: relative; overflow: hidden; }
+        .reward-canvas { width: 100%; height: 100%; }
+
+        /* Decision Log */
+        .decision-log { max-height: 250px; overflow-y: auto; }
+        .decision-item {
+            display: flex; gap: 0.6rem; padding: 0.65rem; background: var(--bg-elevated); border-radius: 10px;
+            margin-bottom: 0.4rem; border-left: 3px solid var(--blue); animation: slideIn 0.3s ease;
+        }
+        .decision-item.restock { border-left-color: var(--amber); }
+        .decision-item.alert { border-left-color: var(--red); }
+        @keyframes slideIn { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} }
+        .d-icon { width: 32px; height: 32px; background: rgba(14,165,233,0.15); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; flex-shrink: 0; }
+        .decision-item.restock .d-icon { background: rgba(245,158,11,0.15); }
+        .decision-item.alert .d-icon { background: rgba(239,68,68,0.15); }
+        .d-content { flex: 1; min-width: 0; }
+        .d-title { font-size: 0.75rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .d-meta { font-size: 0.6rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+        .d-reward { font-size: 0.72rem; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+        .d-reward.pos { color: var(--green); }
+        .d-reward.neg { color: var(--red); }
+
+        /* Toast */
+        .toast {
+            position: fixed; bottom: 1.5rem; right: 1.5rem; background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 0.8rem 1.15rem; display: flex; align-items: center; gap: 0.6rem;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.6); transform: translateY(100px); opacity: 0;
+            transition: all 0.4s cubic-bezier(0.4,0,0.2,1); z-index: 999;
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast-icon { font-size: 1.2rem; }
+        .toast-title { font-size: 0.8rem; font-weight: 600; }
+        .toast-msg { font-size: 0.65rem; color: var(--text-muted); }
+
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed; inset: 0; background: rgba(3,7,18,0.97); display: none;
+            flex-direction: column; align-items: center; justify-content: center; z-index: 1000;
+        }
+        .loading-overlay.active { display: flex; }
+        .load-grid { width: 100px; height: 100px; display: grid; grid-template-columns: repeat(3,1fr); gap: 5px; margin-bottom: 1.5rem; }
+        .load-cell { background: var(--blue); border-radius: 4px; animation: cellPulse 1.2s ease-in-out infinite; }
+        .load-cell:nth-child(2){ animation-delay:0.1s; background:var(--teal); }
+        .load-cell:nth-child(3){ animation-delay:0.2s; }
+        .load-cell:nth-child(4){ animation-delay:0.15s; background:var(--teal); }
+        .load-cell:nth-child(5){ animation-delay:0.25s; background:var(--green); }
+        .load-cell:nth-child(6){ animation-delay:0.35s; background:var(--teal); }
+        .load-cell:nth-child(7){ animation-delay:0.3s; }
+        .load-cell:nth-child(8){ animation-delay:0.4s; background:var(--teal); }
+        .load-cell:nth-child(9){ animation-delay:0.5s; background:var(--green); }
+        @keyframes cellPulse { 0%,100%{opacity:0.25;transform:scale(0.85)} 50%{opacity:1;transform:scale(1)} }
+        .load-text { font-size: 1rem; font-weight: 700; margin-bottom: 0.4rem; }
+        .load-stage { font-size: 0.8rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-bottom: 1.2rem; }
+        .load-bar-track { width: 260px; height: 4px; background: var(--bg-elevated); border-radius: 2px; overflow: hidden; }
+        .load-bar-fill { height: 100%; background: var(--gradient); width: 0%; transition: width 0.3s; }
+
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    </style>
+</head>
+<body>
+<header class="header">
+    <div class="header-inner">
+        <div class="logo">
+            <div class="logo-mark">
+                <div class="logo-cell"></div><div class="logo-cell"></div><div class="logo-cell"></div>
+                <div class="logo-cell"></div><div class="logo-cell"></div><div class="logo-cell"></div>
+                <div class="logo-cell"></div><div class="logo-cell"></div><div class="logo-cell"></div>
+            </div>
+            <div>
+                <div class="logo-title">RL Inventory Agent</div>
+                <div class="logo-sub">Blue Yonder AI Studio • Demo</div>
+            </div>
+        </div>
+        <div class="badges">
+            <span class="badge live">Agent Active</span>
+            <span class="badge">PPO Policy</span>
+            <span class="badge">6 Warehouses</span>
+            <span class="badge">PyTorch 2.3</span>
+        </div>
+    </div>
+</header>
+
+<main class="main">
+    <div class="hero">
+        <h1>📦 Multi-Warehouse Inventory Rebalancing</h1>
+        <p>RL agent learns optimal stock transfers to minimize stockouts & overstock across a 6-node warehouse network</p>
+    </div>
+    <div class="grid-main">
+        <div class="card">
+            <div class="card-head">
+                <h3>🗺️ Warehouse Network</h3>
+                <span style="font-size:0.65rem;color:var(--text-muted);font-family:'JetBrains Mono'">6 nodes • real-time</span>
+            </div>
+            <div class="card-body">
+                <div class="network-map" id="networkMap">
+                    <div class="map-grid"></div>
+                    <svg class="transfer-svg" id="transferSvg"></svg>
+                    <div class="warehouse optimal" id="wh0" style="left:8%;top:25%">
+                        <div class="wh-node">🏭</div>
+                        <div class="wh-name">Paris CDG</div>
+                        <div class="wh-stock" id="whStock0">2,450 units</div>
+                    </div>
+                    <div class="warehouse surplus" id="wh1" style="left:38%;top:8%">
+                        <div class="wh-node">🏭</div>
+                        <div class="wh-name">Lyon Hub</div>
+                        <div class="wh-stock" id="whStock1">4,120 units</div>
+                    </div>
+                    <div class="warehouse warning" id="wh2" style="left:70%;top:12%">
+                        <div class="wh-node">🏭</div>
+                        <div class="wh-name">Marseille</div>
+                        <div class="wh-stock" id="whStock2">890 units</div>
+                    </div>
+                    <div class="warehouse critical" id="wh3" style="left:75%;top:55%">
+                        <div class="wh-node">🏭</div>
+                        <div class="wh-name">Toulouse</div>
+                        <div class="wh-stock" id="whStock3">320 units</div>
+                    </div>
+                    <div class="warehouse optimal" id="wh4" style="left:35%;top:65%">
+                        <div class="wh-node">🏭</div>
+                        <div class="wh-name">Bordeaux</div>
+                        <div class="wh-stock" id="whStock4">1,870 units</div>
+                    </div>
+                    <div class="warehouse surplus" id="wh5" style="left:10%;top:70%">
+                        <div class="wh-node">🏭</div>
+                        <div class="wh-name">Nantes</div>
+                        <div class="wh-stock" id="whStock5">3,600 units</div>
+                    </div>
+                </div>
+
+                <div class="controls" style="margin-top:1rem;">
+                    <button class="ctrl-btn" id="startBtn" onclick="toggleAgent()">
+                        <span id="startIcon">▶️</span> <span id="startText">Start Agent</span>
+                    </button>
+                    <button class="ctrl-btn" onclick="resetAll()">🔄 Reset</button>
+                    <button class="ctrl-btn" onclick="injectDemandSpike()">⚡ Demand Spike</button>
+                    <button class="ctrl-btn" onclick="injectSupplyDrop()">🚫 Supply Drop</button>
+                </div>
+
+                <div class="inv-bars" id="invBars"></div>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="card">
+                <div class="card-head"><h3>🤖 Agent Status</h3></div>
+                <div class="card-body">
+                    <div class="agent-status">
+                        <div class="agent-header">
+                            <div class="agent-icon">🧠</div>
+                            <div>
+                                <div class="agent-name">PPO Rebalance Agent</div>
+                                <div class="agent-ver">v1.4.0 • 3-layer MLP • γ=0.99</div>
+                            </div>
+                        </div>
+                        <div class="agent-metrics">
+                            <div class="a-metric"><div class="a-metric-val" id="mEpisode">0</div><div class="a-metric-label">Episode</div></div>
+                            <div class="a-metric"><div class="a-metric-val" id="mReward">0.0</div><div class="a-metric-label">Cum. Reward</div></div>
+                            <div class="a-metric"><div class="a-metric-val" id="mStockouts">0</div><div class="a-metric-label">Stockouts</div></div>
+                            <div class="a-metric"><div class="a-metric-val" id="mTransfers">0</div><div class="a-metric-label">Transfers</div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-head"><h3>📈 Reward Curve</h3></div>
+                <div class="card-body">
+                    <div class="reward-chart">
+                        <canvas class="reward-canvas" id="rewardCanvas"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-head">
+                    <h3>📋 Agent Decisions</h3>
+                    <span style="font-size:0.62rem;color:var(--text-muted)" id="decisionCount">0 actions</span>
+                </div>
+                <div class="card-body">
+                    <div class="decision-log" id="decisionLog">
+                        <div style="color:var(--text-muted);font-size:0.8rem;text-align:center;padding:1.5rem;">Start agent to see decisions</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="load-grid">
+        <div class="load-cell"></div><div class="load-cell"></div><div class="load-cell"></div>
+        <div class="load-cell"></div><div class="load-cell"></div><div class="load-cell"></div>
+        <div class="load-cell"></div><div class="load-cell"></div><div class="load-cell"></div>
+    </div>
+    <div class="load-text">Initializing RL Agent...</div>
+    <div class="load-stage" id="loadStage">Loading PPO policy network...</div>
+    <div class="load-bar-track"><div class="load-bar-fill" id="loadBar"></div></div>
+</div>
+
+<div class="toast" id="toast">
+    <span class="toast-icon" id="toastIcon">✅</span>
+    <div>
+        <div class="toast-title" id="toastTitle">Success</div>
+        <div class="toast-msg" id="toastMsg">Agent started</div>
+    </div>
+</div>
+
+<script>
+const WH_NAMES = ['Paris CDG','Lyon Hub','Marseille','Toulouse','Bordeaux','Nantes'];
+const WH_CAPACITY = [3000, 5000, 2000, 1500, 3000, 4500];
+let whStock = [2450, 4120, 890, 320, 1870, 3600];
+let isRunning = false, agentInterval = null, episode = 0, cumReward = 0, stockouts = 0, transfers = 0;
+let rewardHistory = [];
+let decisionEntries = [];
+
+function init() {
+    renderInvBars();
+    updateAllUI();
+    initRewardCanvas();
+}
+
+function renderInvBars() {
+    const c = document.getElementById('invBars');
+    c.innerHTML = WH_NAMES.map((n,i) => {
+        const pct = (whStock[i]/WH_CAPACITY[i]*100).toFixed(0);
+        const color = pct < 25 ? 'var(--red)' : pct < 50 ? 'var(--amber)' : pct > 85 ? 'var(--blue)' : 'var(--green)';
+        return `<div class="inv-bar-item">
+            <div class="inv-bar-head"><span class="inv-bar-name">${n}</span><span class="inv-bar-val" style="color:${color}">${pct}%</span></div>
+            <div class="inv-track"><div class="inv-fill" id="invFill${i}" style="width:${pct}%;background:${color}"></div></div>
+        </div>`;
+    }).join('');
+}
+
+function updateAllUI() {
+    whStock.forEach((s,i) => {
+        document.getElementById(`whStock${i}`).textContent = s.toLocaleString() + ' units';
+        const el = document.getElementById(`wh${i}`);
+        const pct = s / WH_CAPACITY[i] * 100;
+        el.className = 'warehouse ' + (pct < 20 ? 'critical' : pct < 40 ? 'warning' : pct > 80 ? 'surplus' : 'optimal');
+        const fill = document.getElementById(`invFill${i}`);
+        if (fill) {
+            const color = pct < 25 ? 'var(--red)' : pct < 50 ? 'var(--amber)' : pct > 85 ? 'var(--blue)' : 'var(--green)';
+            fill.style.width = pct + '%';
+            fill.style.background = color;
+            fill.parentElement.parentElement.querySelector('.inv-bar-val').textContent = pct.toFixed(0) + '%';
+            fill.parentElement.parentElement.querySelector('.inv-bar-val').style.color = color;
+        }
+    });
+    document.getElementById('mEpisode').textContent = episode;
+    document.getElementById('mReward').textContent = cumReward.toFixed(1);
+    document.getElementById('mStockouts').textContent = stockouts;
+    document.getElementById('mTransfers').textContent = transfers;
+}
+
+function toggleAgent() {
+    if (!isRunning) {
+        const overlay = document.getElementById('loadingOverlay');
+        const bar = document.getElementById('loadBar');
+        const stage = document.getElementById('loadStage');
+        overlay.classList.add('active');
+        const stages = ['Loading PPO policy network...','Initializing value function...','Setting up state encoder...','Computing baseline inventory...','Calibrating reward function...','Agent ready!'];
+        let p = 0, si = 0;
+        const iv = setInterval(() => {
+            p += Math.random()*18+8; if(p>100) p=100;
+            bar.style.width = p+'%';
+            const ns = Math.floor((p/100)*stages.length);
+            if(ns!==si && ns<stages.length){ si=ns; stage.textContent=stages[si]; }
+            if(p>=100){ clearInterval(iv); setTimeout(()=>{ overlay.classList.remove('active'); beginAgent(); },250); }
+        },70);
+    } else { stopAgent(); }
+}
+
+function beginAgent() {
+    isRunning = true;
+    document.getElementById('startIcon').textContent = '⏸️';
+    document.getElementById('startText').textContent = 'Pause Agent';
+    document.getElementById('startBtn').classList.add('active');
+    agentInterval = setInterval(agentStep, 1200);
+    toast('Agent Active','RL agent is making decisions');
+}
+
+function stopAgent() {
+    isRunning = false;
+    document.getElementById('startIcon').textContent = '▶️';
+    document.getElementById('startText').textContent = 'Resume Agent';
+    document.getElementById('startBtn').classList.remove('active');
+    clearInterval(agentInterval);
+    toast('Agent Paused','Decision-making suspended');
+}
+
+function agentStep() {
+    episode++;
+    // Simulate demand
+    whStock = whStock.map((s,i) => Math.max(0, s - Math.floor(Math.random()*200+50)));
+
+    // Check stockouts
+    whStock.forEach((s,i) => { if(s < 100) stockouts++; });
+
+    // Agent decision: find surplus → deficit, transfer
+    let maxI = 0, minI = 0;
+    whStock.forEach((s,i) => {
+        if(s/WH_CAPACITY[i] > whStock[maxI]/WH_CAPACITY[maxI]) maxI = i;
+        if(s/WH_CAPACITY[i] < whStock[minI]/WH_CAPACITY[minI]) minI = i;
+    });
+
+    if(maxI !== minI && whStock[maxI] > 500) {
+        const amount = Math.floor(Math.random()*400+200);
+        const actual = Math.min(amount, whStock[maxI]-300);
+        if(actual > 0) {
+            whStock[maxI] -= actual;
+            whStock[minI] = Math.min(WH_CAPACITY[minI], whStock[minI] + actual);
+            transfers++;
+            const reward = actual > 200 ? +(Math.random()*3+1).toFixed(1) : +(Math.random()*1+0.2).toFixed(1);
+            cumReward += parseFloat(reward);
+            rewardHistory.push(cumReward);
+            drawRewardChart();
+            animateTransfer(maxI, minI);
+            addDecision('transfer', `${WH_NAMES[maxI]} → ${WH_NAMES[minI]}`, `${actual} units transferred`, reward);
+        }
+    }
+
+    // Random restock recommendation
+    if(Math.random() > 0.7) {
+        const lowIdx = whStock.indexOf(Math.min(...whStock));
+        const amt = Math.floor(Math.random()*300+100);
+        addDecision('restock', `Restock ${WH_NAMES[lowIdx]}`, `Recommend +${amt} units`, +(Math.random()*2).toFixed(1));
+    }
+
+    // Check for alerts
+    whStock.forEach((s,i) => {
+        if(s < 150 && Math.random() > 0.5) {
+            addDecision('alert', `⚠️ ${WH_NAMES[i]} Critical`, `Only ${s} units remaining`, -(Math.random()*3+1).toFixed(1));
+        }
+    });
+
+    updateAllUI();
+    renderInvBars();
+}
+
+function animateTransfer(from, to) {
+    const svg = document.getElementById('transferSvg');
+    const fromEl = document.getElementById(`wh${from}`);
+    const toEl = document.getElementById(`wh${to}`);
+    const map = document.getElementById('networkMap');
+    const rect = map.getBoundingClientRect();
+    const x1 = fromEl.offsetLeft + 55, y1 = fromEl.offsetTop + 32;
+    const x2 = toEl.offsetLeft + 55, y2 = toEl.offsetTop + 32;
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',x1); line.setAttribute('y1',y1);
+    line.setAttribute('x2',x2); line.setAttribute('y2',y2);
+    line.setAttribute('stroke','url(#transferGrad)');
+    line.setAttribute('stroke-dasharray','8 6');
+    line.classList.add('transfer-line','active');
+    svg.appendChild(line);
+    setTimeout(() => line.remove(), 2500);
+}
+
+function addDecision(type, title, detail, reward) {
+    const log = document.getElementById('decisionLog');
+    if(log.querySelector('div[style]')) log.innerHTML = '';
+    const icons = { transfer:'📦', restock:'🔄', alert:'🚨' };
+    const cls = type === 'alert' ? 'alert' : type === 'restock' ? 'restock' : '';
+    const rw = parseFloat(reward);
+    const entry = document.createElement('div');
+    entry.className = `decision-item ${cls}`;
+    entry.innerHTML = `
+        <div class="d-icon">${icons[type]||'📦'}</div>
+        <div class="d-content">
+            <div class="d-title">${title}</div>
+            <div class="d-meta">${detail} • Step ${episode}</div>
+        </div>
+        <div class="d-reward ${rw>=0?'pos':'neg'}">${rw>=0?'+':''}${rw}</div>
+    `;
+    log.insertBefore(entry, log.firstChild);
+    decisionEntries.unshift(entry);
+    if(decisionEntries.length > 30) { decisionEntries.pop()?.remove(); }
+    document.getElementById('decisionCount').textContent = `${decisionEntries.length} actions`;
+}
+
+function initRewardCanvas() {
+    const canvas = document.getElementById('rewardCanvas');
+    canvas.width = canvas.offsetWidth * 2;
+    canvas.height = canvas.offsetHeight * 2;
+}
+
+function drawRewardChart() {
+    const canvas = document.getElementById('rewardCanvas');
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0,0,w,h);
+    if(rewardHistory.length < 2) return;
+    const max = Math.max(...rewardHistory, 1);
+    const min = Math.min(...rewardHistory, 0);
+    const range = max - min || 1;
+    ctx.beginPath();
+    ctx.strokeStyle = '#0ea5e9';
+    ctx.lineWidth = 3;
+    rewardHistory.forEach((v,i) => {
+        const x = (i/(rewardHistory.length-1))*w;
+        const y = h - ((v-min)/range)*h*0.85 - h*0.05;
+        i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+    // Fill
+    const lastX = w, lastY = h - ((rewardHistory[rewardHistory.length-1]-min)/range)*h*0.85 - h*0.05;
+    ctx.lineTo(lastX, h);
+    ctx.lineTo(0, h);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0,0,0,h);
+    grad.addColorStop(0, 'rgba(14,165,233,0.3)');
+    grad.addColorStop(1, 'rgba(14,165,233,0)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+}
+
+function injectDemandSpike() {
+    const idx = Math.floor(Math.random()*6);
+    whStock[idx] = Math.max(0, whStock[idx] - Math.floor(Math.random()*800+500));
+    updateAllUI(); renderInvBars();
+    toast('⚡ Demand Spike', `${WH_NAMES[idx]} lost significant stock`);
+}
+
+function injectSupplyDrop() {
+    const idx = Math.floor(Math.random()*6);
+    whStock[idx] = Math.max(0, Math.floor(whStock[idx]*0.3));
+    updateAllUI(); renderInvBars();
+    toast('🚫 Supply Disruption', `${WH_NAMES[idx]} supply severely reduced`);
+}
+
+function resetAll() {
+    stopAgent();
+    whStock = [2450,4120,890,320,1870,3600];
+    episode=0; cumReward=0; stockouts=0; transfers=0;
+    rewardHistory=[]; decisionEntries=[];
+    document.getElementById('decisionLog').innerHTML='<div style="color:var(--text-muted);font-size:0.8rem;text-align:center;padding:1.5rem;">Start agent to see decisions</div>';
+    document.getElementById('decisionCount').textContent='0 actions';
+    const ctx = document.getElementById('rewardCanvas').getContext('2d');
+    ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
+    updateAllUI(); renderInvBars();
+    toast('🔄 Reset','All data cleared');
+}
+
+function toast(title, msg) {
+    const t = document.getElementById('toast');
+    document.getElementById('toastTitle').textContent = title;
+    document.getElementById('toastMsg').textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// SVG gradient
+window.addEventListener('load', () => {
+    const svg = document.getElementById('transferSvg');
+    const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+    const grad = document.createElementNS('http://www.w3.org/2000/svg','linearGradient');
+    grad.id = 'transferGrad';
+    const s1 = document.createElementNS('http://www.w3.org/2000/svg','stop');
+    s1.setAttribute('offset','0%'); s1.setAttribute('stop-color','#0ea5e9');
+    const s2 = document.createElementNS('http://www.w3.org/2000/svg','stop');
+    s2.setAttribute('offset','100%'); s2.setAttribute('stop-color','#22c55e');
+    grad.appendChild(s1); grad.appendChild(s2);
+    defs.appendChild(grad); svg.appendChild(defs);
+    init();
+});
+</script>
+</body>
+</html>
